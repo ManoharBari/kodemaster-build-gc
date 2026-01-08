@@ -1,0 +1,12 @@
+# Compiled binaries
+your_program
+*.o
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+
+# OS files
+.DS_Store
