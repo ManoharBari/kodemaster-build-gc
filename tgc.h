@@ -28,6 +28,9 @@ typedef struct {
     size_t nitems, nslots, mitems, nfrees;
 } tgc_t;
 
+void *tgc_alloc(tgc_t *gc, size_t size);
+void *tgc_alloc_opt(tgc_t *gc, size_t size, int flags, void(*dtor)(void*));
+
 void tgc_start(tgc_t *gc, void *stk);
 void tgc_stop(tgc_t *gc);
 void tgc_pause(tgc_t *gc);

@@ -207,3 +207,38 @@ void tgc_resume(tgc_t *gc) {
 void tgc_run(tgc_t *gc) {
     // Will be: tgc_mark(gc); tgc_sweep(gc);
 }
+
+static void *tgc_add(
+    tgc_t *gc, void *ptr, size_t size,
+    int flags, void(*dtor)(void*)) {
+
+    gc->nitems++;
+    gc->maxptr = ((uintptr_t)ptr) + size > gc->maxptr ?
+        ((uintptr_t)ptr) + size : gc->maxptr;
+    gc->minptr = ((uintptr_t)ptr) < gc->minptr ?
+        ((uintptr_t)ptr) : gc->minptr;
+
+    if (tgc_resize_more(gc)) {
+        tgc_add_ptr(gc, ptr, size, flags, dtor);
+        if (!gc->paused && gc->nitems > gc->mitems) {
+            tgc_run(gc);
+        }
+        return ptr;
+    } else {
+        gc->nitems--;
+        free(ptr);
+        return NULL;
+    }
+}
+
+void *tgc_alloc(tgc_t *gc, size_t size) {
+    return tgc_alloc_opt(gc, size, 0, NULL);
+}
+
+void *tgc_alloc_opt(tgc_t *gc, size_t size, int flags, void(*dtor)(void*)) {
+    void *ptr = malloc(size);
+    if (ptr != NULL) {
+        ptr = tgc_add(gc, ptr, size, flags, dtor);
+    }
+    return ptr;
+}
