@@ -305,14 +305,3 @@ void tgc_free(tgc_t *gc, void *ptr) {
         tgc_rem(gc, ptr);
     }
 }
-
-void tgc_free(tgc_t *gc, void *ptr) {
-    tgc_ptr_t *p = tgc_get_ptr(gc, ptr);
-    if (p) {
-        if (p->dtor) {
-            p->dtor(ptr);
-        }
-        free(ptr);
-        tgc_rem(gc, ptr);
-    }
-}
