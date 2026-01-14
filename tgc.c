@@ -339,3 +339,23 @@ static void tgc_mark_ptr(tgc_t *gc, void *ptr) {
         j++;
     }
 }
+
+static void tgc_mark_stack(tgc_t *gc) {
+    void *stk, *bot, *top, *p;
+    bot = gc->bottom;
+    top = &stk;
+
+    if (bot == top) { return; }
+
+    if (bot < top) {
+        for (p = top; p >= bot; p = ((char*)p) - sizeof(void*)) {
+            tgc_mark_ptr(gc, *((void**)p));
+        }
+    }
+
+    if (bot > top) {
+        for (p = top; p <= bot; p = ((char*)p) + sizeof(void*)) {
+            tgc_mark_ptr(gc, *((void**)p));
+        }
+    }
+}
