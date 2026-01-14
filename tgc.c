@@ -256,3 +256,41 @@ void *tgc_calloc_opt(
     }
     return ptr;
 }
+
+static void tgc_rem(tgc_t *gc, void *ptr) {
+    tgc_rem_ptr(gc, ptr);
+    tgc_resize_less(gc);
+    gc->mitems = gc->nitems + gc->nitems / 2 + 1;
+}
+
+void *tgc_realloc(tgc_t *gc, void *ptr, size_t size) {
+    tgc_ptr_t *p;
+    void *qtr = realloc(ptr, size);
+
+    if (qtr == NULL) {
+        tgc_rem(gc, ptr);
+        return qtr;
+    }
+
+    if (ptr == NULL) {
+        tgc_add(gc, qtr, size, 0, NULL);
+        return qtr;
+    }
+
+    p = tgc_get_ptr(gc, ptr);
+
+    if (p && qtr == ptr) {
+        p->size = size;
+        return qtr;
+    }
+
+    if (p && qtr != ptr) {
+        int flags = p->flags;
+        void(*dtor)(void*) = p->dtor;
+        tgc_rem(gc, ptr);
+        tgc_add(gc, qtr, size, flags, dtor);
+        return qtr;
+    }
+
+    return NULL;
+}
