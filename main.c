@@ -6,26 +6,18 @@ static tgc_t gc;
 int main(int argc, char **argv) {
     tgc_start(&gc, &argc);
 
-    // Allocate some memory!
-    char *str = tgc_alloc(&gc, 32);
-    if (str) {
-        strcpy(str, "Hello, Garbage Collector!");
-        printf("%s\n", str);
+    // Allocate zeroed memory
+    int *arr = tgc_calloc(&gc, 10, sizeof(int));
+    
+    printf("Zeroed array: ");
+    for (int i = 0; i < 10; i++) {
+        printf("%d ", arr[i]);  // Should all be 0
     }
+    printf("\n");
 
-    int *numbers = tgc_alloc(&gc, sizeof(int) * 10);
-    if (numbers) {
-        for (int i = 0; i < 10; i++) {
-            numbers[i] = i * i;
-        }
-        printf("Squares: ");
-        for (int i = 0; i < 10; i++) {
-            printf("%d ", numbers[i]);
-        }
-        printf("\n");
-    }
-
-    printf("Allocations tracked: %zu\n", gc.nitems);
+    // Allocate zeroed buffer
+    char *buffer = tgc_calloc(&gc, 100, 1);
+    printf("Buffer length: %zu (should be 0)\n", strlen(buffer));
 
     tgc_stop(&gc);
     return 0;

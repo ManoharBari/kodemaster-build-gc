@@ -242,3 +242,17 @@ void *tgc_alloc_opt(tgc_t *gc, size_t size, int flags, void(*dtor)(void*)) {
     }
     return ptr;
 }
+
+void *tgc_calloc(tgc_t *gc, size_t num, size_t size) {
+    return tgc_calloc_opt(gc, num, size, 0, NULL);
+}
+
+void *tgc_calloc_opt(
+    tgc_t *gc, size_t num, size_t size,
+    int flags, void(*dtor)(void*)) {
+    void *ptr = calloc(num, size);
+    if (ptr != NULL) {
+        ptr = tgc_add(gc, ptr, num * size, flags, dtor);
+    }
+    return ptr;
+}
