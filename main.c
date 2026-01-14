@@ -1,13 +1,17 @@
 #include <stdio.h>
 #include "tgc.h"
 
+static tgc_t gc;
+
 int main(int argc, char **argv) {
-    int x = 42;
-    int y = 43;
+    tgc_start(&gc, &argc);
     
-    printf("Address of x: %p\n", (void*)&x);
-    printf("Address of y: %p\n", (void*)&y);
-    printf("Garbage Collector - Hash function ready!\n");
+    printf("Garbage Collector Started!\n");
+    printf("Stack bottom: %p\n", gc.bottom);
+    printf("Load factor: %.1f\n", gc.loadfactor);
+    
+    tgc_stop(&gc);
+    printf("Garbage Collector Stopped!\n");
     
     return 0;
 }

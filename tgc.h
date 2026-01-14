@@ -28,4 +28,10 @@ typedef struct {
     size_t nitems, nslots, mitems, nfrees;
 } tgc_t;
 
+void tgc_start(tgc_t *gc, void *stk);
+void tgc_stop(tgc_t *gc);
+void tgc_pause(tgc_t *gc);
+void tgc_resume(tgc_t *gc);
+void tgc_run(tgc_t *gc);
+
 #endif
