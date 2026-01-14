@@ -451,3 +451,14 @@ void tgc_sweep(tgc_t *gc) {
     gc->frees = NULL;
     gc->nfrees = 0;
 }
+
+void tgc_run(tgc_t *gc) {
+    tgc_mark(gc);
+    tgc_sweep(gc);
+}
+
+void tgc_stop(tgc_t *gc) {
+    tgc_sweep(gc);
+    free(gc->items);
+    free(gc->frees);
+}
