@@ -47,3 +47,63 @@ static void tgc_add_ptr(
         j++;
     }
 }
+
+static tgc_ptr_t *tgc_get_ptr(tgc_t *gc, void *ptr) {
+    size_t i, j, h;
+    i = tgc_hash(ptr) % gc->nslots;
+    j = 0;
+    while (1) {
+        h = gc->items[i].hash;
+        if (h == 0 || j > tgc_probe(gc, i, h)) {
+            return NULL;  // Not found
+        }
+        if (gc->items[i].ptr == ptr) {
+            return &gc->items[i];  // Found!
+        }
+        i = (i + 1) % gc->nslots;
+        j++;
+    }
+    return NULL;
+}
+
+static void tgc_rem_ptr(tgc_t *gc, void *ptr) {
+    size_t i, j, h, nj, nh;
+
+    if (gc->nitems == 0) { return; }
+
+    for (i = 0; i < gc->nfrees; i++) {
+        if (gc->frees[i].ptr == ptr) {
+            gc->frees[i].ptr = NULL;
+        }
+    }
+
+    i = tgc_hash(ptr) % gc->nslots;
+    j = 0;
+
+    while (1) {
+        h = gc->items[i].hash;
+        if (h == 0 || j > tgc_probe(gc, i, h)) {
+            return;  // Not found
+        }
+        if (gc->items[i].ptr == ptr) {
+            memset(&gc->items[i], 0, sizeof(tgc_ptr_t));
+            j = i;
+            // Backward shift
+            while (1) {
+                nj = (j + 1) % gc->nslots;
+                nh = gc->items[nj].hash;
+                if (nh != 0 && tgc_probe(gc, nj, nh) > 0) {
+                    memcpy(&gc->items[j], &gc->items[nj], sizeof(tgc_ptr_t));
+                    memset(&gc->items[nj], 0, sizeof(tgc_ptr_t));
+                    j = nj;
+                } else {
+                    break;
+                }
+            }
+            gc->nitems--;
+            return;
+        }
+        i = (i + 1) % gc->nslots;
+        j++;
+    }
+}
