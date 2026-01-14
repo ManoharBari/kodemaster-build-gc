@@ -107,3 +107,71 @@ static void tgc_rem_ptr(tgc_t *gc, void *ptr) {
         j++;
     }
 }
+
+enum {
+    TGC_PRIMES_COUNT = 24
+};
+
+static const size_t tgc_primes[TGC_PRIMES_COUNT] = {
+    0,       1,       5,       11,
+    23,      53,      101,     197,
+    389,     683,     1259,    2417,
+    4733,    9371,    18617,   37097,
+    74093,   148073,  296099,  592019,
+    1100009, 2200013, 4400021, 8800019
+};
+
+static size_t tgc_ideal_size(tgc_t *gc, size_t size) {
+    size_t i, last;
+    size = (size_t)((double)(size + 1) / gc->loadfactor);
+    for (i = 0; i < TGC_PRIMES_COUNT; i++) {
+        if (tgc_primes[i] >= size) {
+            return tgc_primes[i];
+        }
+    }
+    last = tgc_primes[TGC_PRIMES_COUNT - 1];
+    for (i = 0;; i++) {
+        if (last * i >= size) {
+            return last * i;
+        }
+    }
+    return 0;
+}
+
+static int tgc_rehash(tgc_t *gc, size_t new_size) {
+    size_t i;
+    tgc_ptr_t *old_items = gc->items;
+    size_t old_size = gc->nslots;
+
+    gc->nslots = new_size;
+    gc->items = calloc(gc->nslots, sizeof(tgc_ptr_t));
+
+    if (gc->items == NULL) {
+        gc->nslots = old_size;
+        gc->items = old_items;
+        return 0;
+    }
+
+    for (i = 0; i < old_size; i++) {
+        if (old_items[i].hash != 0) {
+            tgc_add_ptr(gc,
+                old_items[i].ptr, old_items[i].size,
+                old_items[i].flags, old_items[i].dtor);
+        }
+    }
+
+    free(old_items);
+    return 1;
+}
+
+static int tgc_resize_more(tgc_t *gc) {
+    size_t new_size = tgc_ideal_size(gc, gc->nitems);
+    size_t old_size = gc->nslots;
+    return (new_size > old_size) ? tgc_rehash(gc, new_size) : 1;
+}
+
+static int tgc_resize_less(tgc_t *gc) {
+    size_t new_size = tgc_ideal_size(gc, gc->nitems);
+    size_t old_size = gc->nslots;
+    return (new_size < old_size) ? tgc_rehash(gc, new_size) : 1;
+}
