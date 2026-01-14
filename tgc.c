@@ -359,3 +359,33 @@ static void tgc_mark_stack(tgc_t *gc) {
         }
     }
 }
+
+static void tgc_mark(tgc_t *gc) {
+    size_t i, k;
+    jmp_buf env;
+    void (*volatile mark_stack)(tgc_t*) = tgc_mark_stack;
+
+    if (gc->nitems == 0) { return; }
+
+    // First pass: mark all roots
+    for (i = 0; i < gc->nslots; i++) {
+        if (gc->items[i].hash == 0) { continue; }
+        if (gc->items[i].flags & TGC_MARK) { continue; }
+        if (gc->items[i].flags & TGC_ROOT) {
+            gc->items[i].flags |= TGC_MARK;
+            if (gc->items[i].flags & TGC_LEAF) { continue; }
+            // Scan root's contents
+            for (k = 0; k < gc->items[i].size / sizeof(void*); k++) {
+                tgc_mark_ptr(gc, ((void**)gc->items[i].ptr)[k]);
+            }
+            continue;
+        }
+    }
+
+    // Flush registers to stack
+    memset(&env, 0, sizeof(jmp_buf));
+    setjmp(env);
+
+    // Scan the stack
+    mark_stack(gc);
+}
