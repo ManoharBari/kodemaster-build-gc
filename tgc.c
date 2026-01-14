@@ -305,3 +305,37 @@ void tgc_free(tgc_t *gc, void *ptr) {
         tgc_rem(gc, ptr);
     }
 }
+
+static void tgc_mark_ptr(tgc_t *gc, void *ptr) {
+    size_t i, j, h, k;
+
+    // Bounds check - quick rejection
+    if ((uintptr_t)ptr < gc->minptr ||
+        (uintptr_t)ptr > gc->maxptr) {
+        return;
+    }
+
+    // Look up in hash table
+    i = tgc_hash(ptr) % gc->nslots;
+    j = 0;
+
+    while (1) {
+        h = gc->items[i].hash;
+        if (h == 0 || j > tgc_probe(gc, i, h)) { return; }
+        if (ptr == gc->items[i].ptr) {
+            // Already marked - prevent infinite recursion
+            if (gc->items[i].flags & TGC_MARK) { return; }
+            // Mark this allocation
+            gc->items[i].flags |= TGC_MARK;
+            // Leaf nodes contain no pointers - skip
+            if (gc->items[i].flags & TGC_LEAF) { return; }
+            // Scan for embedded pointers
+            for (k = 0; k < gc->items[i].size / sizeof(void*); k++) {
+                tgc_mark_ptr(gc, ((void**)gc->items[i].ptr)[k]);
+            }
+            return;
+        }
+        i = (i + 1) % gc->nslots;
+        j++;
+    }
+}
