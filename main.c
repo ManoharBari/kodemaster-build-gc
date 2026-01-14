@@ -3,27 +3,20 @@
 
 static tgc_t gc;
 
+void cleanup(void *ptr) {
+    printf("🧹 Cleaning up %p\n", ptr);
+}
+
 int main(int argc, char **argv) {
     tgc_start(&gc, &argc);
 
-    // Start with small array
-    int *arr = tgc_alloc(&gc, sizeof(int) * 2);
-    arr[0] = 10;
-    arr[1] = 20;
-    printf("Original: %d %d (items: %zu)\n", arr[0], arr[1], gc.nitems);
+    // Allocate with destructor
+    void *data = tgc_alloc_opt(&gc, 100, 0, cleanup);
+    printf("Allocated: %p\n", data);
 
-    // Grow it
-    arr = tgc_realloc(&gc, arr, sizeof(int) * 5);
-    arr[2] = 30;
-    arr[3] = 40;
-    arr[4] = 50;
-    printf("Grown: %d %d %d %d %d (items: %zu)\n",
-           arr[0], arr[1], arr[2], arr[3], arr[4], gc.nitems);
-
-    // Shrink it
-    arr = tgc_realloc(&gc, arr, sizeof(int) * 3);
-    printf("Shrunk: %d %d %d (items: %zu)\n",
-           arr[0], arr[1], arr[2], gc.nitems);
+    // Free triggers destructor
+    tgc_free(&gc, data);
+    printf("Done!\n");
 
     tgc_stop(&gc);
     return 0;
