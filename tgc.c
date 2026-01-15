@@ -1,5 +1,9 @@
 #include "tgc.h"
 
+static void tgc_mark(tgc_t *gc);
+void tgc_sweep(tgc_t *gc);
+
+
 static size_t tgc_hash(void *ptr)
 {
     uintptr_t ad = (uintptr_t)ptr;
