@@ -191,21 +191,12 @@ void tgc_start(tgc_t *gc, void *stk) {
     gc->sweepfactor = 0.5;
 }
 
-void tgc_stop(tgc_t *gc) {
-    free(gc->items);
-    free(gc->frees);
-}
-
 void tgc_pause(tgc_t *gc) {
     gc->paused = 1;
 }
 
 void tgc_resume(tgc_t *gc) {
     gc->paused = 0;
-}
-
-void tgc_run(tgc_t *gc) {
-    // Will be: tgc_mark(gc); tgc_sweep(gc);
 }
 
 static void *tgc_add(
