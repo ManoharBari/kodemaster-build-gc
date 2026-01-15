@@ -3,15 +3,18 @@
 
 static tgc_t gc;
 
-void create_garbage() {
+void create_garbage()
+{
     // Allocate memory that becomes unreachable
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 100; i++)
+    {
         tgc_alloc(&gc, 1000);
     }
     // All 100 allocations are garbage after this function returns!
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
     tgc_start(&gc, &argc);
 
     printf("Initial: %zu allocations\n", gc.nitems);

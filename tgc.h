@@ -6,20 +6,23 @@
 #include <string.h>
 #include <setjmp.h>
 
-enum {
+enum
+{
     TGC_MARK = 0x01,
     TGC_ROOT = 0x02,
     TGC_LEAF = 0x04
 };
 
-typedef struct {
+typedef struct
+{
     void *ptr;
     int flags;
     size_t size, hash;
-    void (*dtor)(void*);
+    void (*dtor)(void *);
 } tgc_ptr_t;
 
-typedef struct {
+typedef struct
+{
     void *bottom;
     int paused;
     uintptr_t minptr, maxptr;
@@ -29,10 +32,10 @@ typedef struct {
 } tgc_t;
 
 void *tgc_alloc(tgc_t *gc, size_t size);
-void *tgc_alloc_opt(tgc_t *gc, size_t size, int flags, void(*dtor)(void*));
+void *tgc_alloc_opt(tgc_t *gc, size_t size, int flags, void (*dtor)(void *));
 
 void *tgc_calloc(tgc_t *gc, size_t num, size_t size);
-void *tgc_calloc_opt(tgc_t *gc, size_t num, size_t size, int flags, void(*dtor)(void*));
+void *tgc_calloc_opt(tgc_t *gc, size_t num, size_t size, int flags, void (*dtor)(void *));
 
 void *tgc_realloc(tgc_t *gc, void *ptr, size_t size);
 
