@@ -250,7 +250,7 @@ void tgc_resume(tgc_t *gc)
 void tgc_run(tgc_t *gc)
 {
     tgc_mark(gc);
-    tgc_sweep(gc);
+    tgc_stop(gc);
 }
 
 static void *tgc_add(
