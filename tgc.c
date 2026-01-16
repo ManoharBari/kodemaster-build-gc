@@ -328,10 +328,12 @@ void *tgc_realloc(tgc_t *gc, void *ptr, size_t size)
 {
     tgc_ptr_t *p;
     void *qtr;
+    int flags;
+    void (*dtor)(void *);
 
     if (ptr == NULL)
     {
-        qtr = realloc(ptr, size);
+        qtr = malloc(size);
         if (qtr != NULL)
         {
             tgc_add(gc, qtr, size, 0, NULL);
@@ -341,33 +343,33 @@ void *tgc_realloc(tgc_t *gc, void *ptr, size_t size)
 
     p = tgc_get_ptr(gc, ptr);
 
+    if (!p)
+    {
+        // Not tracked by GC, just use regular realloc
+        return realloc(ptr, size);
+    }
+
+    // Save metadata before removing from GC
+    flags = p->flags;
+    dtor = p->dtor;
+
+    // Remove from GC tracking BEFORE realloc
+    tgc_rem(gc, ptr);
+
+    // Now safe to realloc
     qtr = realloc(ptr, size);
 
     if (qtr == NULL)
     {
-        if (p)
-        {
-            tgc_rem(gc, ptr);
-        }
-        return qtr;
+        // Realloc failed, original ptr is still valid but no longer tracked
+        // Re-add the original pointer
+        tgc_add(gc, ptr, p->size, flags, dtor);
+        return NULL;
     }
 
-    if (p && qtr == ptr)
-    {
-        p->size = size;
-        return qtr;
-    }
-
-    if (p && qtr != ptr)
-    {
-        int flags = p->flags;
-        void (*dtor)(void *) = p->dtor;
-        tgc_rem(gc, ptr);
-        tgc_add(gc, qtr, size, flags, dtor);
-        return qtr;
-    }
-
-    return NULL;
+    // Realloc succeeded, add new pointer to GC
+    tgc_add(gc, qtr, size, flags, dtor);
+    return qtr;
 }
 
 void tgc_free(tgc_t *gc, void *ptr)
