@@ -214,6 +214,12 @@ static int tgc_resize_less(tgc_t *gc)
     return (new_size < old_size) ? tgc_rehash(gc, new_size) : 1;
 }
 
+/* Forward declarations */
+static void tgc_mark_ptr(tgc_t *gc, void *ptr);
+static void tgc_mark_stack(tgc_t *gc);
+static void tgc_mark(tgc_t *gc);
+static void tgc_sweep(tgc_t *gc);
+
 void tgc_start(tgc_t *gc, void *stk)
 {
     gc->bottom = stk;
@@ -232,7 +238,7 @@ void tgc_start(tgc_t *gc, void *stk)
 
 void tgc_stop(tgc_t *gc)
 {
-    tgc_stop(gc);
+    tgc_sweep(gc);
     free(gc->items);
     free(gc->frees);
 }
@@ -250,7 +256,7 @@ void tgc_resume(tgc_t *gc)
 void tgc_run(tgc_t *gc)
 {
     tgc_mark(gc);
-    tgc_stop(gc);
+    tgc_sweep(gc);
 }
 
 static void *tgc_add(
@@ -491,7 +497,7 @@ static void tgc_mark(tgc_t *gc)
     mark_stack(gc);
 }
 
-void tgc_sweep(tgc_t *gc)
+static void tgc_sweep(tgc_t *gc)
 {
     size_t i, j, k, nj, nh;
 
