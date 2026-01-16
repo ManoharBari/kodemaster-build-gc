@@ -232,7 +232,7 @@ void tgc_start(tgc_t *gc, void *stk)
 
 void tgc_stop(tgc_t *gc)
 {
-    tgc_sweep(gc);
+    tgc_stop(gc);
     free(gc->items);
     free(gc->frees);
 }
