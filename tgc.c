@@ -327,21 +327,30 @@ static void tgc_rem(tgc_t *gc, void *ptr)
 void *tgc_realloc(tgc_t *gc, void *ptr, size_t size)
 {
     tgc_ptr_t *p;
-    void *qtr = realloc(ptr, size);
-
-    if (qtr == NULL)
-    {
-        tgc_rem(gc, ptr);
-        return qtr;
-    }
+    void *qtr;
 
     if (ptr == NULL)
     {
-        tgc_add(gc, qtr, size, 0, NULL);
+        qtr = realloc(ptr, size);
+        if (qtr != NULL)
+        {
+            tgc_add(gc, qtr, size, 0, NULL);
+        }
         return qtr;
     }
 
     p = tgc_get_ptr(gc, ptr);
+
+    qtr = realloc(ptr, size);
+
+    if (qtr == NULL)
+    {
+        if (p)
+        {
+            tgc_rem(gc, ptr);
+        }
+        return qtr;
+    }
 
     if (p && qtr == ptr)
     {
@@ -366,12 +375,13 @@ void tgc_free(tgc_t *gc, void *ptr)
     tgc_ptr_t *p = tgc_get_ptr(gc, ptr);
     if (p)
     {
-        if (p->dtor)
+        void (*dtor)(void *) = p->dtor;
+        tgc_rem(gc, ptr);
+        if (dtor)
         {
-            p->dtor(ptr);
+            dtor(ptr);
         }
         free(ptr);
-        tgc_rem(gc, ptr);
     }
 }
 
