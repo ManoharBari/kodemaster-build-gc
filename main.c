@@ -6,10 +6,8 @@
 
 /* ================= FORWARD DECLARATIONS ================= */
 
-
 static void tgc_mark(tgc_t *gc);
 void tgc_sweep(tgc_t *gc);
-
 
 /* ======================================================== */
 
