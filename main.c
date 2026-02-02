@@ -11,6 +11,7 @@ void tgc_sweep(tgc_t *gc);
 
 /* ======================================================== */
 
+
 static size_t tgc_hash(void *ptr)
 {
     uintptr_t ad = (uintptr_t)ptr;
