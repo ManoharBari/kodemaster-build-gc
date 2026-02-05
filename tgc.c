@@ -1,4 +1,15 @@
 #include "tgc.h"
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <setjmp.h>
+
+/* ================= FORWARD DECLARATIONS ================= */
+
+static void tgc_mark(tgc_t *gc);
+static void tgc_sweep(tgc_t *gc);
+
+/* ======================================================== */
 
 static size_t tgc_hash(void *ptr)
 {
@@ -8,19 +19,18 @@ static size_t tgc_hash(void *ptr)
 
 static size_t tgc_probe(tgc_t *gc, size_t i, size_t h)
 {
-    long v = i - (h - 1);
+    long v = (long)i - ((long)h - 1);
     if (v < 0)
     {
-        v = gc->nslots + v;
+        v = (long)gc->nslots + v;
     }
-    return v;
+    return (size_t)v;
 }
 
 static void tgc_add_ptr(
     tgc_t *gc, void *ptr, size_t size,
     int flags, void (*dtor)(void *))
 {
-
     tgc_ptr_t item, tmp;
     size_t h, p, i, j;
 
@@ -43,7 +53,7 @@ static void tgc_add_ptr(
         }
         if (gc->items[i].ptr == item.ptr)
         {
-            return; // Already exists
+            return;
         }
         p = tgc_probe(gc, i, h);
         if (j >= p)
@@ -68,16 +78,15 @@ static tgc_ptr_t *tgc_get_ptr(tgc_t *gc, void *ptr)
         h = gc->items[i].hash;
         if (h == 0 || j > tgc_probe(gc, i, h))
         {
-            return NULL; // Not found
+            return NULL;
         }
         if (gc->items[i].ptr == ptr)
         {
-            return &gc->items[i]; // Found!
+            return &gc->items[i];
         }
         i = (i + 1) % gc->nslots;
         j++;
     }
-    return NULL;
 }
 
 static void tgc_rem_ptr(tgc_t *gc, void *ptr)
@@ -85,17 +94,7 @@ static void tgc_rem_ptr(tgc_t *gc, void *ptr)
     size_t i, j, h, nj, nh;
 
     if (gc->nitems == 0)
-    {
         return;
-    }
-
-    for (i = 0; i < gc->nfrees; i++)
-    {
-        if (gc->frees[i].ptr == ptr)
-        {
-            gc->frees[i].ptr = NULL;
-        }
-    }
 
     i = tgc_hash(ptr) % gc->nslots;
     j = 0;
@@ -104,14 +103,12 @@ static void tgc_rem_ptr(tgc_t *gc, void *ptr)
     {
         h = gc->items[i].hash;
         if (h == 0 || j > tgc_probe(gc, i, h))
-        {
-            return; // Not found
-        }
+            return;
+
         if (gc->items[i].ptr == ptr)
         {
             memset(&gc->items[i], 0, sizeof(tgc_ptr_t));
             j = i;
-            // Backward shift
             while (1)
             {
                 nj = (j + 1) % gc->nslots;
@@ -214,11 +211,7 @@ static int tgc_resize_less(tgc_t *gc)
     return (new_size < old_size) ? tgc_rehash(gc, new_size) : 1;
 }
 
-/* Forward declarations */
-static void tgc_mark_ptr(tgc_t *gc, void *ptr);
-static void tgc_mark_stack(tgc_t *gc);
-static void tgc_mark(tgc_t *gc);
-static void tgc_sweep(tgc_t *gc);
+/* ===================== GC CORE ===================== */
 
 void tgc_start(tgc_t *gc, void *stk)
 {
@@ -259,11 +252,12 @@ void tgc_run(tgc_t *gc)
     tgc_sweep(gc);
 }
 
+/* ===================== ALLOCATION ===================== */
+
 static void *tgc_add(
     tgc_t *gc, void *ptr, size_t size,
     int flags, void (*dtor)(void *))
 {
-
     gc->nitems++;
     gc->maxptr = ((uintptr_t)ptr) + size > gc->maxptr ? ((uintptr_t)ptr) + size : gc->maxptr;
     gc->minptr = ((uintptr_t)ptr) < gc->minptr ? ((uintptr_t)ptr) : gc->minptr;
@@ -330,6 +324,7 @@ void *tgc_realloc(tgc_t *gc, void *ptr, size_t size)
     void *qtr;
     int flags;
     void (*dtor)(void *);
+    size_t old_size;
 
     if (ptr == NULL)
     {
@@ -352,6 +347,7 @@ void *tgc_realloc(tgc_t *gc, void *ptr, size_t size)
     // Save metadata before removing from GC
     flags = p->flags;
     dtor = p->dtor;
+    old_size = p->size;
 
     // Remove from GC tracking BEFORE realloc
     tgc_rem(gc, ptr);
@@ -363,7 +359,7 @@ void *tgc_realloc(tgc_t *gc, void *ptr, size_t size)
     {
         // Realloc failed, original ptr is still valid but no longer tracked
         // Re-add the original pointer
-        tgc_add(gc, ptr, p->size, flags, dtor);
+        tgc_add(gc, ptr, old_size, flags, dtor);
         return NULL;
     }
 
@@ -387,6 +383,8 @@ void tgc_free(tgc_t *gc, void *ptr)
     }
 }
 
+/* ===================== DESTRUCTOR MANAGEMENT ===================== */
+
 void tgc_set_dtor(tgc_t *gc, void *ptr, void (*dtor)(void *))
 {
     tgc_ptr_t *p = tgc_get_ptr(gc, ptr);
@@ -406,18 +404,47 @@ void (*tgc_get_dtor(tgc_t *gc, void *ptr))(void *)
     return NULL;
 }
 
+/* ===================== FLAG AND SIZE MANAGEMENT ===================== */
+
+void tgc_set_flags(tgc_t *gc, void *ptr, int flags)
+{
+    tgc_ptr_t *p = tgc_get_ptr(gc, ptr);
+    if (p)
+    {
+        p->flags = flags;
+    }
+}
+
+int tgc_get_flags(tgc_t *gc, void *ptr)
+{
+    tgc_ptr_t *p = tgc_get_ptr(gc, ptr);
+    if (p)
+    {
+        return p->flags;
+    }
+    return 0;
+}
+
+size_t tgc_get_size(tgc_t *gc, void *ptr)
+{
+    tgc_ptr_t *p = tgc_get_ptr(gc, ptr);
+    if (p)
+    {
+        return p->size;
+    }
+    return 0;
+}
+
+/* ===================== MARK PHASE ===================== */
+
 static void tgc_mark_ptr(tgc_t *gc, void *ptr)
 {
     size_t i, j, h, k;
 
-    // Bounds check - quick rejection
     if ((uintptr_t)ptr < gc->minptr ||
         (uintptr_t)ptr > gc->maxptr)
-    {
         return;
-    }
 
-    // Look up in hash table
     i = tgc_hash(ptr) % gc->nslots;
     j = 0;
 
@@ -425,28 +452,20 @@ static void tgc_mark_ptr(tgc_t *gc, void *ptr)
     {
         h = gc->items[i].hash;
         if (h == 0 || j > tgc_probe(gc, i, h))
-        {
             return;
-        }
+
         if (ptr == gc->items[i].ptr)
         {
-            // Already marked - prevent infinite recursion
             if (gc->items[i].flags & TGC_MARK)
-            {
                 return;
-            }
-            // Mark this allocation
+
             gc->items[i].flags |= TGC_MARK;
-            // Leaf nodes contain no pointers - skip
+
             if (gc->items[i].flags & TGC_LEAF)
-            {
                 return;
-            }
-            // Scan for embedded pointers
+
             for (k = 0; k < gc->items[i].size / sizeof(void *); k++)
-            {
                 tgc_mark_ptr(gc, ((void **)gc->items[i].ptr)[k]);
-            }
             return;
         }
         i = (i + 1) % gc->nslots;
@@ -460,25 +479,15 @@ static void tgc_mark_stack(tgc_t *gc)
     bot = gc->bottom;
     top = &stk;
 
-    if (bot == top)
-    {
-        return;
-    }
-
     if (bot < top)
     {
-        for (p = top; p >= bot; p = ((char *)p) - sizeof(void *))
-        {
+        for (p = top; p >= bot; p = (char *)p - sizeof(void *))
             tgc_mark_ptr(gc, *((void **)p));
-        }
     }
-
-    if (bot > top)
+    else
     {
-        for (p = top; p <= bot; p = ((char *)p) + sizeof(void *))
-        {
+        for (p = top; p <= bot; p = (char *)p + sizeof(void *))
             tgc_mark_ptr(gc, *((void **)p));
-        }
     }
 }
 
@@ -486,149 +495,96 @@ static void tgc_mark(tgc_t *gc)
 {
     size_t i, k;
     jmp_buf env;
-    void (*volatile mark_stack)(tgc_t *) = tgc_mark_stack;
 
     if (gc->nitems == 0)
-    {
         return;
-    }
 
-    // First pass: mark all roots
     for (i = 0; i < gc->nslots; i++)
     {
         if (gc->items[i].hash == 0)
-        {
             continue;
-        }
+
         if (gc->items[i].flags & TGC_MARK)
-        {
             continue;
-        }
+
         if (gc->items[i].flags & TGC_ROOT)
         {
             gc->items[i].flags |= TGC_MARK;
-            if (gc->items[i].flags & TGC_LEAF)
+            if (!(gc->items[i].flags & TGC_LEAF))
             {
-                continue;
+                for (k = 0; k < gc->items[i].size / sizeof(void *); k++)
+                    tgc_mark_ptr(gc, ((void **)gc->items[i].ptr)[k]);
             }
-            // Scan root's contents
-            for (k = 0; k < gc->items[i].size / sizeof(void *); k++)
-            {
-                tgc_mark_ptr(gc, ((void **)gc->items[i].ptr)[k]);
-            }
-            continue;
         }
     }
 
-    // Flush registers to stack
-    memset(&env, 0, sizeof(jmp_buf));
+    memset(&env, 0, sizeof(env));
     setjmp(env);
 
-    // Scan the stack
-    mark_stack(gc);
+    tgc_mark_stack(gc);
 }
+
+/* ===================== SWEEP PHASE ===================== */
 
 static void tgc_sweep(tgc_t *gc)
 {
     size_t i, j, k, nj, nh;
 
     if (gc->nitems == 0)
-    {
         return;
-    }
 
     gc->nfrees = 0;
+
     for (i = 0; i < gc->nslots; i++)
     {
-        if (gc->items[i].hash == 0)
-        {
-            continue;
-        }
-        if (gc->items[i].flags & TGC_MARK)
-        {
-            continue;
-        }
-        if (gc->items[i].flags & TGC_ROOT)
-        {
-            continue;
-        }
-        gc->nfrees++;
+        if (gc->items[i].hash &&
+            !(gc->items[i].flags & (TGC_MARK | TGC_ROOT)))
+            gc->nfrees++;
     }
 
     gc->frees = realloc(gc->frees, sizeof(tgc_ptr_t) * gc->nfrees);
-    if (gc->frees == NULL)
-    {
+    if (!gc->frees)
         return;
-    }
 
     i = 0;
     k = 0;
+
     while (i < gc->nslots)
     {
-        if (gc->items[i].hash == 0)
+        if (gc->items[i].hash &&
+            !(gc->items[i].flags & (TGC_MARK | TGC_ROOT)))
         {
-            i++;
-            continue;
-        }
-        if (gc->items[i].flags & TGC_MARK)
-        {
-            i++;
-            continue;
-        }
-        if (gc->items[i].flags & TGC_ROOT)
-        {
-            i++;
-            continue;
-        }
+            gc->frees[k++] = gc->items[i];
+            memset(&gc->items[i], 0, sizeof(tgc_ptr_t));
 
-        gc->frees[k] = gc->items[i];
-        k++;
-        memset(&gc->items[i], 0, sizeof(tgc_ptr_t));
-
-        j = i;
-        while (1)
-        {
-            nj = (j + 1) % gc->nslots;
-            nh = gc->items[nj].hash;
-            if (nh != 0 && tgc_probe(gc, nj, nh) > 0)
+            j = i;
+            while (1)
             {
-                memcpy(&gc->items[j], &gc->items[nj], sizeof(tgc_ptr_t));
-                memset(&gc->items[nj], 0, sizeof(tgc_ptr_t));
-                j = nj;
+                nj = (j + 1) % gc->nslots;
+                nh = gc->items[nj].hash;
+                if (nh && tgc_probe(gc, nj, nh) > 0)
+                {
+                    memcpy(&gc->items[j], &gc->items[nj], sizeof(tgc_ptr_t));
+                    memset(&gc->items[nj], 0, sizeof(tgc_ptr_t));
+                    j = nj;
+                }
+                else
+                    break;
             }
-            else
-            {
-                break;
-            }
+            gc->nitems--;
         }
-        gc->nitems--;
+        else
+            i++;
     }
 
     for (i = 0; i < gc->nslots; i++)
-    {
-        if (gc->items[i].hash == 0)
-        {
-            continue;
-        }
-        if (gc->items[i].flags & TGC_MARK)
-        {
-            gc->items[i].flags &= ~TGC_MARK;
-        }
-    }
-
-    tgc_resize_less(gc);
-    gc->mitems = gc->nitems + (size_t)(gc->nitems * gc->sweepfactor) + 1;
+        gc->items[i].flags &= ~TGC_MARK;
 
     for (i = 0; i < gc->nfrees; i++)
     {
-        if (gc->frees[i].ptr)
-        {
-            if (gc->frees[i].dtor)
-            {
-                gc->frees[i].dtor(gc->frees[i].ptr);
-            }
-            free(gc->frees[i].ptr);
-        }
+        if (gc->frees[i].dtor)
+            gc->frees[i].dtor(gc->frees[i].ptr);
+        free(gc->frees[i].ptr);
     }
 
     free(gc->frees);
