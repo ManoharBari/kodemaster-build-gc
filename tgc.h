@@ -47,4 +47,7 @@ void tgc_pause(tgc_t *gc);
 void tgc_resume(tgc_t *gc);
 void tgc_run(tgc_t *gc);
 
+void tgc_set_dtor(tgc_t *gc, void *ptr, void (*dtor)(void *));
+void (*tgc_get_dtor(tgc_t *gc, void *ptr))(void *);
+
 #endif

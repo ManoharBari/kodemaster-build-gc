@@ -83,6 +83,7 @@ static tgc_ptr_t *tgc_get_ptr(tgc_t *gc, void *ptr)
 static void tgc_rem_ptr(tgc_t *gc, void *ptr)
 {
     size_t i, j, h, nj, nh;
+
     if (gc->nitems == 0)
     {
         return;

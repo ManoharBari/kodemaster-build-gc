@@ -7,10 +7,9 @@
 /* ================= FORWARD DECLARATIONS ================= */
 
 static void tgc_mark(tgc_t *gc);
-void tgc_sweep(tgc_t *gc);
+static void tgc_sweep(tgc_t *gc);
 
 /* ======================================================== */
-
 
 static size_t tgc_hash(void *ptr)
 {
@@ -133,6 +132,85 @@ static void tgc_rem_ptr(tgc_t *gc, void *ptr)
     }
 }
 
+enum
+{
+    TGC_PRIMES_COUNT = 24
+};
+
+static const size_t tgc_primes[TGC_PRIMES_COUNT] = {
+    0, 1, 5, 11,
+    23, 53, 101, 197,
+    389, 683, 1259, 2417,
+    4733, 9371, 18617, 37097,
+    74093, 148073, 296099, 592019,
+    1100009, 2200013, 4400021, 8800019};
+
+static size_t tgc_ideal_size(tgc_t *gc, size_t size)
+{
+    size_t i, last;
+    size = (size_t)((double)(size + 1) / gc->loadfactor);
+    for (i = 0; i < TGC_PRIMES_COUNT; i++)
+    {
+        if (tgc_primes[i] >= size)
+        {
+            return tgc_primes[i];
+        }
+    }
+    last = tgc_primes[TGC_PRIMES_COUNT - 1];
+    for (i = 0;; i++)
+    {
+        if (last * i >= size)
+        {
+            return last * i;
+        }
+    }
+    return 0;
+}
+
+static int tgc_rehash(tgc_t *gc, size_t new_size)
+{
+    size_t i;
+    tgc_ptr_t *old_items = gc->items;
+    size_t old_size = gc->nslots;
+
+    gc->nslots = new_size;
+    gc->items = calloc(gc->nslots, sizeof(tgc_ptr_t));
+
+    if (gc->items == NULL)
+    {
+        gc->nslots = old_size;
+        gc->items = old_items;
+        return 0;
+    }
+
+    for (i = 0; i < old_size; i++)
+    {
+        if (old_items[i].hash != 0)
+        {
+            tgc_add_ptr(gc,
+                        old_items[i].ptr, old_items[i].size,
+                        old_items[i].flags, old_items[i].dtor);
+        }
+    }
+
+    free(old_items);
+    return 1;
+}
+
+static int tgc_resize_more(tgc_t *gc)
+{
+    size_t new_size = tgc_ideal_size(gc, gc->nitems);
+    size_t old_size = gc->nslots;
+    return (new_size > old_size) ? tgc_rehash(gc, new_size) : 1;
+}
+
+static int tgc_resize_less(tgc_t *gc)
+{
+    size_t new_size = tgc_ideal_size(gc, gc->nitems);
+    size_t old_size = gc->nslots;
+    return (new_size < old_size) ? tgc_rehash(gc, new_size) : 1;
+}
+
 /* ===================== GC CORE ===================== */
 
 void tgc_start(tgc_t *gc, void *stk)
@@ -172,6 +250,158 @@ void tgc_run(tgc_t *gc)
 {
     tgc_mark(gc);
     tgc_sweep(gc);
+}
+
+/* ===================== ALLOCATION ===================== */
+
+static void *tgc_add(
+    tgc_t *gc, void *ptr, size_t size,
+    int flags, void (*dtor)(void *))
+{
+    gc->nitems++;
+    gc->maxptr = ((uintptr_t)ptr) + size > gc->maxptr ? ((uintptr_t)ptr) + size : gc->maxptr;
+    gc->minptr = ((uintptr_t)ptr) < gc->minptr ? ((uintptr_t)ptr) : gc->minptr;
+
+    if (tgc_resize_more(gc))
+    {
+        tgc_add_ptr(gc, ptr, size, flags, dtor);
+        if (!gc->paused && gc->nitems > gc->mitems)
+        {
+            tgc_run(gc);
+        }
+        return ptr;
+    }
+    else
+    {
+        gc->nitems--;
+        free(ptr);
+        return NULL;
+    }
+}
+
+void *tgc_alloc(tgc_t *gc, size_t size)
+{
+    return tgc_alloc_opt(gc, size, 0, NULL);
+}
+
+void *tgc_alloc_opt(tgc_t *gc, size_t size, int flags, void (*dtor)(void *))
+{
+    void *ptr = malloc(size);
+    if (ptr != NULL)
+    {
+        ptr = tgc_add(gc, ptr, size, flags, dtor);
+    }
+    return ptr;
+}
+
+void *tgc_calloc(tgc_t *gc, size_t num, size_t size)
+{
+    return tgc_calloc_opt(gc, num, size, 0, NULL);
+}
+
+void *tgc_calloc_opt(
+    tgc_t *gc, size_t num, size_t size,
+    int flags, void (*dtor)(void *))
+{
+    void *ptr = calloc(num, size);
+    if (ptr != NULL)
+    {
+        ptr = tgc_add(gc, ptr, num * size, flags, dtor);
+    }
+    return ptr;
+}
+
+static void tgc_rem(tgc_t *gc, void *ptr)
+{
+    tgc_rem_ptr(gc, ptr);
+    tgc_resize_less(gc);
+    gc->mitems = gc->nitems + gc->nitems / 2 + 1;
+}
+
+void *tgc_realloc(tgc_t *gc, void *ptr, size_t size)
+{
+    tgc_ptr_t *p;
+    void *qtr;
+    int flags;
+    void (*dtor)(void *);
+    size_t old_size;
+
+    if (ptr == NULL)
+    {
+        qtr = malloc(size);
+        if (qtr != NULL)
+        {
+            tgc_add(gc, qtr, size, 0, NULL);
+        }
+        return qtr;
+    }
+
+    p = tgc_get_ptr(gc, ptr);
+
+    if (!p)
+    {
+        // Not tracked by GC, just use regular realloc
+        return realloc(ptr, size);
+    }
+
+    // Save metadata before removing from GC
+    flags = p->flags;
+    dtor = p->dtor;
+    old_size = p->size;
+
+    // Remove from GC tracking BEFORE realloc
+    tgc_rem(gc, ptr);
+
+    // Now safe to realloc
+    qtr = realloc(ptr, size);
+
+    if (qtr == NULL)
+    {
+        // Realloc failed, original ptr is still valid but no longer tracked
+        // Re-add the original pointer
+        tgc_add(gc, ptr, old_size, flags, dtor);
+        return NULL;
+    }
+
+    // Realloc succeeded, add new pointer to GC
+    tgc_add(gc, qtr, size, flags, dtor);
+    return qtr;
+}
+
+void tgc_free(tgc_t *gc, void *ptr)
+{
+    tgc_ptr_t *p = tgc_get_ptr(gc, ptr);
+    if (p)
+    {
+        void (*dtor)(void *) = p->dtor;
+        tgc_rem(gc, ptr);
+        if (dtor)
+        {
+            dtor(ptr);
+        }
+        free(ptr);
+    }
+}
+
+/* ===================== DESTRUCTOR MANAGEMENT ===================== */
+
+void tgc_set_dtor(tgc_t *gc, void *ptr, void (*dtor)(void *))
+{
+    tgc_ptr_t *p = tgc_get_ptr(gc, ptr);
+    if (p)
+    {
+        p->dtor = dtor;
+    }
+}
+
+void (*tgc_get_dtor(tgc_t *gc, void *ptr))(void *)
+{
+    tgc_ptr_t *p = tgc_get_ptr(gc, ptr);
+    if (p)
+    {
+        return p->dtor;
+    }
+    return NULL;
 }
 
 /* ===================== MARK PHASE ===================== */
@@ -265,7 +495,7 @@ static void tgc_mark(tgc_t *gc)
 
 /* ===================== SWEEP PHASE ===================== */
 
-void tgc_sweep(tgc_t *gc)
+static void tgc_sweep(tgc_t *gc)
 {
     size_t i, j, k, nj, nh;
 
