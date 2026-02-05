@@ -387,6 +387,25 @@ void tgc_free(tgc_t *gc, void *ptr)
     }
 }
 
+void tgc_set_dtor(tgc_t *gc, void *ptr, void (*dtor)(void *))
+{
+    tgc_ptr_t *p = tgc_get_ptr(gc, ptr);
+    if (p)
+    {
+        p->dtor = dtor;
+    }
+}
+
+void (*tgc_get_dtor(tgc_t *gc, void *ptr))(void *)
+{
+    tgc_ptr_t *p = tgc_get_ptr(gc, ptr);
+    if (p)
+    {
+        return p->dtor;
+    }
+    return NULL;
+}
+
 static void tgc_mark_ptr(tgc_t *gc, void *ptr)
 {
     size_t i, j, h, k;
